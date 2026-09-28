@@ -14,7 +14,21 @@ const DOWNLOAD_DIR = "/tmp/tiktok-downloads";
 fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 
 /* =========================
-   HOME / STATUS
+   YT-DLP VERSION CHECK
+========================= */
+
+execFile("yt-dlp", ["--version"], (error, stdout, stderr) => {
+  console.log(
+    "[YTDLP VERSION]",
+    stdout?.trim() ||
+    stderr?.trim() ||
+    error?.message ||
+    "unknown"
+  );
+});
+
+/* =========================
+   HOME
 ========================= */
 
 app.get("/", (req, res) => {
@@ -49,13 +63,14 @@ app.get("/download", async (req, res) => {
   }
 
   const id = crypto.randomBytes(8).toString("hex");
+
   const output = path.join(
     DOWNLOAD_DIR,
     `${id}.mp4`
   );
 
   console.log("[DOWNLOAD] URL:", url);
-  console.log("[DOWNLOAD] Output:", output);
+  console.log("[DOWNLOAD] OUTPUT:", output);
 
   try {
     await runYtDlp(url, output);
@@ -69,12 +84,12 @@ app.get("/download", async (req, res) => {
     const stat = fs.statSync(output);
 
     console.log(
-      "[DOWNLOAD] File size:",
+      "[DOWNLOAD] SIZE:",
       stat.size,
       "bytes"
     );
 
-    if (!stat.size) {
+    if (stat.size <= 0) {
       throw new Error(
         "Downloaded video is empty"
       );
@@ -100,7 +115,7 @@ app.get("/download", async (req, res) => {
     stream.on("error", (error) => {
       console.error(
         "[STREAM ERROR]",
-        error
+        error.message
       );
 
       cleanup(output);
@@ -131,8 +146,6 @@ app.get("/download", async (req, res) => {
 function runYtDlp(url, output) {
   return new Promise((resolve, reject) => {
 
-    /* Check yt-dlp version first */
-
     execFile(
       "yt-dlp",
       ["--version"],
@@ -140,8 +153,8 @@ function runYtDlp(url, output) {
 
         console.log(
           "[YTDLP VERSION]",
-          versionStdout ||
-          versionStderr ||
+          versionStdout?.trim() ||
+          versionStderr?.trim() ||
           versionError?.message ||
           "unknown"
         );
@@ -172,7 +185,6 @@ function runYtDlp(url, output) {
             timeout: 120000,
             maxBuffer: 10 * 1024 * 1024
           },
-
           (error, stdout, stderr) => {
 
             console.log(
