@@ -13,6 +13,10 @@ const DOWNLOAD_DIR = "/tmp/tiktok-downloads";
 
 fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 
+/* =========================
+   HOME / STATUS
+========================= */
+
 app.get("/", (req, res) => {
   res.json({
     success: true,
@@ -20,6 +24,10 @@ app.get("/", (req, res) => {
     status: "online"
   });
 });
+
+/* =========================
+   DOWNLOAD
+========================= */
 
 app.get("/download", async (req, res) => {
   const url = req.query.url;
@@ -31,7 +39,9 @@ app.get("/download", async (req, res) => {
     });
   }
 
-  if (!/^(https?:\/\/)?((www|m|vm|vt)\.)?tiktok\.com\//i.test(url)) {
+  if (
+    !/^(https?:\/\/)?((www|m|vm|vt)\.)?tiktok\.com\//i.test(url)
+  ) {
     return res.status(400).json({
       success: false,
       error: "Invalid TikTok URL"
@@ -39,43 +49,73 @@ app.get("/download", async (req, res) => {
   }
 
   const id = crypto.randomBytes(8).toString("hex");
-  const output = path.join(DOWNLOAD_DIR, `${id}.mp4`);
+  const output = path.join(
+    DOWNLOAD_DIR,
+    `${id}.mp4`
+  );
+
+  console.log("[DOWNLOAD] URL:", url);
+  console.log("[DOWNLOAD] Output:", output);
 
   try {
     await runYtDlp(url, output);
 
     if (!fs.existsSync(output)) {
-      throw new Error("Video file was not created");
+      throw new Error(
+        "Video file was not created"
+      );
     }
 
     const stat = fs.statSync(output);
 
+    console.log(
+      "[DOWNLOAD] File size:",
+      stat.size,
+      "bytes"
+    );
+
     if (!stat.size) {
-      throw new Error("Downloaded video is empty");
+      throw new Error(
+        "Downloaded video is empty"
+      );
     }
 
-    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader(
+      "Content-Type",
+      "video/mp4"
+    );
+
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="tiktok_${id}.mp4"`
     );
 
-    const stream = fs.createReadStream(output);
+    const stream =
+      fs.createReadStream(output);
 
     stream.on("close", () => {
       cleanup(output);
     });
 
-    stream.on("error", () => {
+    stream.on("error", (error) => {
+      console.error(
+        "[STREAM ERROR]",
+        error
+      );
+
       cleanup(output);
     });
 
     stream.pipe(res);
 
   } catch (error) {
-    cleanup(output);
 
-    console.error("[YTDLP ERROR]", error);
+    console.error(
+      "[YTDLP ERROR]",
+      error
+    );
+
+    cleanup(output);
 
     return res.status(500).json({
       success: false,
@@ -84,48 +124,118 @@ app.get("/download", async (req, res) => {
   }
 });
 
+/* =========================
+   YT-DLP
+========================= */
+
 function runYtDlp(url, output) {
   return new Promise((resolve, reject) => {
-    const args = [
-      "--no-playlist",
-      "--no-warnings",
-      "--quiet",
-      "--merge-output-format",
-      "mp4",
-      "-o",
-      output,
-      url
-    ];
+
+    /* Check yt-dlp version first */
 
     execFile(
       "yt-dlp",
-      args,
-      {
-        timeout: 120000,
-        maxBuffer: 1024 * 1024 * 5
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          console.error("[yt-dlp]", stderr || error.message);
-          return reject(error);
-        }
+      ["--version"],
+      (versionError, versionStdout, versionStderr) => {
 
-        resolve();
+        console.log(
+          "[YTDLP VERSION]",
+          versionStdout ||
+          versionStderr ||
+          versionError?.message ||
+          "unknown"
+        );
+
+        const args = [
+          "--no-playlist",
+          "--no-warnings",
+
+          "--merge-output-format",
+          "mp4",
+
+          "-o",
+          output,
+
+          url
+        ];
+
+        console.log(
+          "[YTDLP COMMAND]",
+          "yt-dlp",
+          ...args
+        );
+
+        execFile(
+          "yt-dlp",
+          args,
+          {
+            timeout: 120000,
+            maxBuffer: 10 * 1024 * 1024
+          },
+
+          (error, stdout, stderr) => {
+
+            console.log(
+              "[YTDLP STDOUT]",
+              stdout || ""
+            );
+
+            console.log(
+              "[YTDLP STDERR]",
+              stderr || ""
+            );
+
+            if (error) {
+              return reject(error);
+            }
+
+            resolve();
+          }
+        );
       }
     );
   });
 }
 
+/* =========================
+   CLEANUP
+========================= */
+
 function cleanup(file) {
   try {
-    if (fs.existsSync(file)) {
+
+    if (
+      file &&
+      fs.existsSync(file)
+    ) {
       fs.unlinkSync(file);
+
+      console.log(
+        "[CLEANUP] Removed:",
+        file
+      );
     }
+
   } catch (error) {
-    console.error("[CLEANUP]", error.message);
+
+    console.error(
+      "[CLEANUP ERROR]",
+      error.message
+    );
   }
 }
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`TikTok Downloader API running on port ${PORT}`);
-});
+/* =========================
+   START SERVER
+========================= */
+
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+
+    console.log(
+      `TikTok Downloader API running on port ${PORT}`
+    );
+  }
+);
